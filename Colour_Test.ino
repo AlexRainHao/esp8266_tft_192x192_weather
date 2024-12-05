@@ -2,7 +2,7 @@
 #include <TFT_eSPI.h>
 #include <ESP8266WiFi.h>
 #include <ArduinoJson.h>
-#include "simhei16.h"
+#include "font/simfang16.h"
 
 ////////////////////////////////
 const char* SSID = "CMCC-boyu1783";
@@ -33,28 +33,7 @@ const char* test_json = " \
   } \
 ";
 
-TFT_eSPI tft = TFT_eSPI(128, 128);  // Invoke custom library
-
-void setup(void) {
-  Serial.begin(9600);
-
-  tft.init();
-  tft.loadFont(simhei16);
-  Serial.println("init successful " + String(tft.width()) + "-" + String(tft.height()));
-
-  // wifi connection
-  WiFi.begin(SSID, PASSWORD);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.println("connecting");
-    delay(500);
-  }
-
-  Serial.println("wifi connected");
-  Serial.println("IP address: " + WiFi.localIP().toString());
-
-  delay(5000);
-}
+TFT_eSPI tft = TFT_eSPI(128, 128);
 
 struct WhetherMeta {
   String province;
@@ -64,7 +43,10 @@ struct WhetherMeta {
   String windpower;
   String date;
   String time;
+  String weekday;
 };
+
+struct WhetherMeta meta;
 
 void _grid_line() {
   tft.setCursor(tft.getCursorX() + 4, tft.getCursorY() + 4);
@@ -75,13 +57,26 @@ void _parse_datetime(const char* datetime, struct WhetherMeta* meta) {
   strncpy(temp, datetime, sizeof(temp));
   temp[sizeof(temp) - 1] = '\0';  // Null-terminate to be safe
 
-  String token = strtok(temp, " ");
+  char* token = strtok(temp, " ");
 
-  if (token != NULL) {
-    meta->date = String(token);
-  }
+  if (token == NULL)
+    return;
+
   meta->time = strtok(NULL, " ");
+
+  char _date[20] = "";
+  char* _token = strtok(token, "-");
+  if (_token != NULL) {
+    strcat(_date, strtok(NULL, "-"));
+    strcat(_date, "月");
+    strcat(_date, strtok(NULL, "-"));
+    strcat(_date, "日");
+    meta->date = String(_date);
+  }
+
+  meta->weekday = "日";
 }
+
 
 void _parse_json(const char* whether, struct WhetherMeta* meta) {
   JsonDocument doc;
@@ -105,39 +100,66 @@ void _parse_json(const char* whether, struct WhetherMeta* meta) {
   _parse_datetime(_lives["reporttime"], meta);
 }
 
+void setup(void) {
+  Serial.begin(9600);
+
+  tft.init();
+  Serial.println("init successful " + String(tft.width()) + "-" + String(tft.height()));
+
+  // wifi connection
+  WiFi.begin(SSID, PASSWORD);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.println("connecting");
+    delay(500);
+  }
+
+  Serial.println("wifi connected");
+  Serial.println("IP address: " + WiFi.localIP().toString());
+
+  delay(1000);
+
+  _parse_json(test_json, &meta);
+}
 
 void display(struct WhetherMeta* meta) {
-  tft.setCursor(32, 8, 1);
   tft.setTextColor(TFT_WHITE);
-  tft.print(meta->city);
-
-  tft.setCursor(96, 8, 1);
-  tft.print(meta->weather);
+  tft.setTextDatum(MC_DATUM);
 
   tft.drawFastHLine(0, 28, tft.width(), TFT_WHITE);
-  tft.drawFastVLine(88, 0, 28,TFT_WHITE);
+  tft.drawFastVLine(88, 0, 28, TFT_WHITE);
 
-  tft.setCursor(0, 28, 1);
+  tft.drawFastHLine(0, 96, tft.width(), TFT_WHITE);
+  tft.drawFastHLine(0, 124, tft.width(), TFT_WHITE);
+  tft.drawFastVLine(24, 96, 28, TFT_WHITE);
+  tft.drawFastVLine(tft.width() - 24, 96, 28, TFT_WHITE);
+
+  tft.fillRect(0, 96, 24, 28, TFT_ORANGE);
+  tft.fillRect(104, 96, 24, 28, TFT_ORANGE);
+
+  tft.setCursor(32, 8);
+  tft.setTextColor(TFT_WHITE);
+  tft.loadFont(simfang16);
+  tft.drawString(meta->city, 44, 14);
+  tft.drawString(meta->weather, 108, 14);
+
+  tft.drawString(meta->weekday, 12, 110);
+  tft.drawString(meta->date, tft.width() / 2, 110);
+  tft.drawString(meta->temperature, tft.width() - 12, 110);
+
+  tft.unloadFont();
+
   tft.setTextColor(TFT_GREENYELLOW);
-  _grid_line();
-  tft.println(meta->date);
-  _grid_line();
-  tft.setTextFont(4);
-  tft.println(meta->time);
+  tft.drawString(meta->time, tft.width() / 2, tft.height() / 2, 4);
 }
 
 void loop() {
   // Binary inversion of colours
-  tft.invertDisplay(false);  // Where i is true or false
+  tft.invertDisplay(false);
 
   tft.fillScreen(TFT_BLACK);
 
-
   tft.setCursor(0, 0);
-
-  struct WhetherMeta meta;
-
-  _parse_json(test_json, &meta);
 
   display(&meta);
 
